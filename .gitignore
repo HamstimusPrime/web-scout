@@ -1,2 +1,4 @@
 .notes
 .vscode
+/node_modules
+setup.drawio
