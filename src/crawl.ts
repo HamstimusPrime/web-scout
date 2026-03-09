@@ -1,6 +1,6 @@
-import { resolve } from "node:dns";
+import { JSDOM } from "jsdom";
 
-export function normalizeURL(url: string): string {
+export function normalizeURL(url: string): string | null {
     try {
         const u = new URL(url)
         let fullPath = u.host + u.pathname
@@ -8,9 +8,10 @@ export function normalizeURL(url: string): string {
             fullPath = fullPath.slice(0, -1);
         }
         return fullPath
+
     } catch (error) {
         console.log(`unable to parse URL, error: ${error}\n`)
-        return ""
+        return null
     }
 }
 
@@ -27,25 +28,39 @@ export async function getHTML(url: string) {
             process.exit(1)
         }
         if (responseContentType && !responseContentType.includes("text/html")) {
-            console.log("invalid response type\nexiting...")
-            process.exit(1)
+            console.log("invalid response type\nexiting...");
+            process.exit(1);
         }
         //print html in response to console as string
-        console.log(await responseObject.text())
+        console.log(await responseObject.text());
 
     } catch (error) {
         console.log(`an error occured connection to URL:${url}\nerror:${error}\nexiting...`)
     }
-} 
-
-export function crawlPage(
-    baseURL: string,
-    currentURL: string,
-    pages: Record<string, number> = {},
-){
-    //check to see if baseURL and current URL are from the same domain
-    //first noramlize URLs of both
-    // check if both have the same domain name. if they dont
-    
 }
 
+export function isSameDomain(urlA: string, urlB: string): boolean {
+    const urlObjectA = new URL(urlA);
+    const urlObjectB = new URL(urlB);
+    return urlObjectA.hostname === urlObjectB.hostname;
+}
+
+export function getHeadingFromHTML(html: string): string | null {
+    const dom = new JSDOM(html);
+    //get header1 or header 2
+    const heading = dom.window.document.querySelector("h1") ||
+        dom.window.document.querySelector("h2");
+    if (heading) {
+        return heading.textContent
+    }
+    return null
+}
+export function getFirstParagraphFromHTML(html: string): string | null {
+    const dom = new JSDOM(html);
+    //get paragraph nested in main element
+    const paragraph = dom.window.document.querySelector("main p")
+    if (paragraph) {
+        return paragraph.textContent
+    }
+    return null
+}
