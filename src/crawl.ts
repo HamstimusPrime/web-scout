@@ -18,7 +18,7 @@ export function normalizeURL(url: string): string | null {
         return fullPath
 
     } catch (error) {
-        console.log(`unable to parse URL, error: ${error}\n`)
+        console.log(`unable to parse URL: ${url}, error: ${error}\n`)
         return null
     }
 }
@@ -31,19 +31,20 @@ export async function getHTML(url: string) {
             }
         })
         const responseContentType = responseObject.headers.get("content-type")
-        if (responseObject.status === 400) {
-            console.log(`could not fetch response from URL:${url}\nexiting...`)
-            process.exit(1)
+        if (responseObject.status > 399) {
+            // console.log(`could not fetch response from URL:${url}\nexiting...`)
+            return
         }
         if (responseContentType && !responseContentType.includes("text/html")) {
-            console.log("invalid response type\nexiting...");
-            process.exit(1);
+            // console.log("invalid response type\nexiting...");
+            return
         }
         //print html in response to console as string
-        console.log(await responseObject.text());
+        return await responseObject.text();
 
     } catch (error) {
         console.log(`an error occured connection to URL:${url}\nerror:${error}\nexiting...`)
+        return null
     }
 }
 
@@ -53,7 +54,7 @@ export function isSameDomain(urlA: string, urlB: string): boolean | null {
         const urlObjectB = new URL(urlB);
         return urlObjectA.hostname === urlObjectB.hostname;
     } catch (error) {
-        console.log(`error comparing domain names for ulrA: "${urlA}" and urlB: "${urlB}" \nerror:${error} `)
+        // console.log(`error comparing domain names for ulrA: "${urlA}" and urlB: "${urlB}" \nerror:${error} `)
         return null;
     }
 }
@@ -130,4 +131,45 @@ export function extractPageData(html: string, pageURL: string): ExtractedPageDat
     }
 
     return pageData
+}
+
+
+export async function crawlPage(
+    baseURL: string,
+    currentURL: string = baseURL,
+    pages: Record<string, number> = {},
+): Promise<{}> {
+
+    //check if baseURL and currentURL have the same domain name
+    if (isSameDomain(baseURL, currentURL) === false) {
+        return pages
+    }
+    const normalizedCurrentURL = normalizeURL(currentURL)
+    //return pages if current url cant be normalized
+    if (!normalizedCurrentURL) {
+        return pages
+    }
+    if (normalizedCurrentURL in pages) {
+        pages[normalizedCurrentURL] += 1;
+        return pages;
+
+    } else {
+        pages[normalizedCurrentURL] = 1;
+    }
+    // get html string of currentURL 
+    const currentHTML = await getHTML(currentURL)
+    if (!currentHTML) {
+        return pages
+    }
+    console.log(`crawling ${currentURL}`)
+
+    const currentHTMLURLs = getURLsFromHTML(currentHTML, baseURL)
+    if (currentHTMLURLs.length === 0) {
+        return pages;
+    }
+
+    for (const url of currentHTMLURLs) {
+        await crawlPage(baseURL, url, pages)
+    }
+    return pages
 }

@@ -1,8 +1,8 @@
 import { argv } from 'node:process';
-import { getHTML } from "./crawl"
+import { crawlPage } from "./crawl"
 
 
-function main() {
+async function main() {
     if (argv.length <= 2 || argv.length > 3) {
         console.log("too many arguments passed or no arguments\nexiting...")
         process.exit(1)
@@ -10,7 +10,10 @@ function main() {
     const urlFromUser = argv[2]
     console.log(`CLI command: ${urlFromUser}`)
 
-    getHTML(urlFromUser)
-}
 
+    const pages = await crawlPage(
+        urlFromUser,
+    );
+    console.log(pages)
+}
 main();
