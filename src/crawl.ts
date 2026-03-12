@@ -1,4 +1,5 @@
 import { JSDOM } from "jsdom";
+import pLimit from "p-limit"
 
 export type ExtractedPageData = {
     url: string,
@@ -19,31 +20,6 @@ export function normalizeURL(url: string): string | null {
 
     } catch (error) {
         console.log(`unable to parse URL: ${url}, error: ${error}\n`)
-        return null
-    }
-}
-
-export async function getHTML(url: string) {
-    try {
-        const responseObject = await fetch(url, {
-            headers: {
-                "User-Agent": "BootCrawler/1.0"
-            }
-        })
-        const responseContentType = responseObject.headers.get("content-type")
-        if (responseObject.status > 399) {
-            // console.log(`could not fetch response from URL:${url}\nexiting...`)
-            return
-        }
-        if (responseContentType && !responseContentType.includes("text/html")) {
-            // console.log("invalid response type\nexiting...");
-            return
-        }
-        //print html in response to console as string
-        return await responseObject.text();
-
-    } catch (error) {
-        console.log(`an error occured connection to URL:${url}\nerror:${error}\nexiting...`)
         return null
     }
 }
@@ -133,43 +109,99 @@ export function extractPageData(html: string, pageURL: string): ExtractedPageDat
     return pageData
 }
 
+export class ConcurrentCrawler {
+    public limit: ReturnType<typeof pLimit>
+    public pages: Record<string, number> = {}
 
-export async function crawlPage(
-    baseURL: string,
-    currentURL: string = baseURL,
-    pages: Record<string, number> = {},
-): Promise<{}> {
-
-    //check if baseURL and currentURL have the same domain name
-    if (isSameDomain(baseURL, currentURL) === false) {
-        return pages
-    }
-    const normalizedCurrentURL = normalizeURL(currentURL)
-    //return pages if current url cant be normalized
-    if (!normalizedCurrentURL) {
-        return pages
-    }
-    if (normalizedCurrentURL in pages) {
-        pages[normalizedCurrentURL] += 1;
-        return pages;
-
-    } else {
-        pages[normalizedCurrentURL] = 1;
-    }
-    // get html string of currentURL 
-    const currentHTML = await getHTML(currentURL)
-    if (!currentHTML) {
-        return pages
-    }
-    console.log(`crawling ${currentURL}`)
-
-    const currentHTMLURLs = getURLsFromHTML(currentHTML, baseURL)
-    if (currentHTMLURLs.length === 0) {
-        return pages;
+    constructor(
+        public baseURL: string,
+        public maxConcurrency: number = 1
+    ) {
+        this.limit = pLimit(this.maxConcurrency)
     }
 
-    for (const url of currentHTMLURLs) {
-        await crawlPage(baseURL, url, pages)
+    public async crawl(): Promise<Record<string, number>> {
+        await this.crawlPage(this.baseURL)
+        return this.pages
     }
-    return pages
+
+    private addPageVisit(normalizeURL: string): boolean {
+        const wasVistited = normalizeURL in this.pages
+        if (wasVistited === false) {
+            this.pages[normalizeURL] = 1
+            return true
+        }
+        this.pages[normalizeURL] += 1
+        return false
+    }
+
+    private async getHTML(url: string) {
+        return await this.limit(async () => {
+
+            try {
+                const responseObject = await fetch(url, {
+                    headers: {
+                        "User-Agent": "BootCrawler/1.0"
+                    }
+                })
+                const responseContentType = responseObject.headers.get("content-type")
+                if (responseObject.status > 399) {
+                    // console.log(`could not fetch response from URL:${url}\nexiting...`)
+                    return
+                }
+                if (responseContentType && !responseContentType.includes("text/html")) {
+                    // console.log("invalid response type\nexiting...");
+                    return
+                }
+                //print html in response to console as string
+                return await responseObject.text();
+
+            } catch (error) {
+                console.log(`an error occured connection to URL:${url}\nerror:${error}\nexiting...`)
+                return
+            }
+        })
+    }
+
+    private async crawlPage(
+        currentURL: string = this.baseURL,
+    ): Promise<void> {
+
+        //check if baseURL and currentURL have the same domain name
+        if (isSameDomain(this.baseURL, currentURL) === false) {
+            return
+        }
+        const normalizedCurrentURL = normalizeURL(currentURL)
+        //return pages if current url cant be normalized
+        if (!normalizedCurrentURL) {
+            return
+        }
+        const pageHasBeenVisited = this.addPageVisit(normalizedCurrentURL)
+        if (pageHasBeenVisited === false) {
+            return
+        }
+        // get html string of currentURL 
+        const currentHTML = await this.getHTML(currentURL)
+        if (!currentHTML) {
+            return
+        }
+        console.log(`crawling ${currentURL}`)
+
+        const currentHTMLURLs = getURLsFromHTML(currentHTML, this.baseURL)
+        if (currentHTMLURLs.length === 0) {
+            return
+        }
+        const promises = currentHTMLURLs.map((url) => this.crawlPage(url))
+        await Promise.all(promises)
+
+        return
+    }
+
+}
+
+export async function crawlSiteAsync(url: string, maxConcurrency: number = 1) {
+    const crawlerObject = new ConcurrentCrawler(url, maxConcurrency)
+    const pageRecords = await crawlerObject.crawl()
+    console.log(pageRecords)
+
 }

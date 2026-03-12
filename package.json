@@ -13,6 +13,7 @@
     "test:debug": "vitest --inspect-brk --inspect --watch --no-file-parallelism"
   },
   "dependencies": {
-    "jsdom": "28.0.0"
+    "jsdom": "28.0.0",
+    "p-limit": "^7.3.0"
   }
 }

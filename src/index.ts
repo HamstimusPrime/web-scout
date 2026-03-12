@@ -1,5 +1,5 @@
 import { argv } from 'node:process';
-import { crawlPage } from "./crawl"
+import { crawlSiteAsync } from "./crawl"
 
 
 async function main() {
@@ -10,10 +10,6 @@ async function main() {
     const urlFromUser = argv[2]
     console.log(`CLI command: ${urlFromUser}`)
 
-
-    const pages = await crawlPage(
-        urlFromUser,
-    );
-    console.log(pages)
+    crawlSiteAsync(urlFromUser);
 }
 main();
