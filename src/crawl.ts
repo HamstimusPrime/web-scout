@@ -112,10 +112,16 @@ export function extractPageData(html: string, pageURL: string): ExtractedPageDat
 export class ConcurrentCrawler {
     public limit: ReturnType<typeof pLimit>
     public pages: Record<string, number> = {}
+    public shouldStop: boolean = false
+    public allTasks: Set<Promise<void>> = new Set()
+    public visitedCount: number = 0
+
 
     constructor(
         public baseURL: string,
-        public maxConcurrency: number = 1
+        public maxConcurrency: number = 1,
+        public maxPages: number = 5,
+
     ) {
         this.limit = pLimit(this.maxConcurrency)
     }
@@ -126,9 +132,20 @@ export class ConcurrentCrawler {
     }
 
     private addPageVisit(normalizeURL: string): boolean {
+        if (this.shouldStop) {
+            return false
+        }
+        if (this.visitedCount >= this.maxPages) {
+            this.shouldStop = true
+            console.log("Reached maximum number of pages to crawl.")
+            return false
+        }
+
+        //count if the number of pages has been met
         const wasVistited = normalizeURL in this.pages
         if (wasVistited === false) {
             this.pages[normalizeURL] = 1
+            this.visitedCount += 1
             return true
         }
         this.pages[normalizeURL] += 1
@@ -153,7 +170,6 @@ export class ConcurrentCrawler {
                     // console.log("invalid response type\nexiting...");
                     return
                 }
-                //print html in response to console as string
                 return await responseObject.text();
 
             } catch (error) {
@@ -167,40 +183,42 @@ export class ConcurrentCrawler {
         currentURL: string = this.baseURL,
     ): Promise<void> {
 
+        if (this.shouldStop) return
+
         //check if baseURL and currentURL have the same domain name
-        if (isSameDomain(this.baseURL, currentURL) === false) {
-            return
-        }
+        if (isSameDomain(this.baseURL, currentURL) === false) return
+
         const normalizedCurrentURL = normalizeURL(currentURL)
+
         //return pages if current url cant be normalized
-        if (!normalizedCurrentURL) {
-            return
-        }
+        if (!normalizedCurrentURL) return
+
+        //update pages, but stop crawling if the URL has been previously visited
         const pageHasBeenVisited = this.addPageVisit(normalizedCurrentURL)
-        if (pageHasBeenVisited === false) {
-            return
-        }
-        // get html string of currentURL 
+        if (pageHasBeenVisited === false) return
+
         const currentHTML = await this.getHTML(currentURL)
-        if (!currentHTML) {
-            return
-        }
+        if (!currentHTML) return
         console.log(`crawling ${currentURL}`)
 
         const currentHTMLURLs = getURLsFromHTML(currentHTML, this.baseURL)
-        if (currentHTMLURLs.length === 0) {
-            return
-        }
-        const promises = currentHTMLURLs.map((url) => this.crawlPage(url))
-        await Promise.all(promises)
+        if (currentHTMLURLs.length === 0) return
 
+        const promises: Promise<void>[] = [];
+        for (const url of currentHTMLURLs) {
+            const task = this.crawlPage(url)
+            this.allTasks.add(task)
+            task.finally(() => this.allTasks.delete(task))
+            promises.push(task)
+        }
+        await Promise.all(promises)
         return
     }
 
 }
 
-export async function crawlSiteAsync(url: string, maxConcurrency: number = 1) {
-    const crawlerObject = new ConcurrentCrawler(url, maxConcurrency)
+export async function crawlSiteAsync(url: string, maxConcurrency: number = 1, maxPages: number = 10) {
+    const crawlerObject = new ConcurrentCrawler(url, maxConcurrency, maxPages)
     const pageRecords = await crawlerObject.crawl()
     console.log(pageRecords)
 

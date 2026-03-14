@@ -1,15 +1,19 @@
 import { argv } from 'node:process';
 import { crawlSiteAsync } from "./crawl"
+import { validateCommandLineArgs } from './utils';
+
 
 
 async function main() {
-    if (argv.length <= 2 || argv.length > 3) {
-        console.log("too many arguments passed or no arguments\nexiting...")
-        process.exit(1)
-    }
-    const urlFromUser = argv[2]
-    console.log(`CLI command: ${urlFromUser}`)
+    const parsedCommands = validateCommandLineArgs(argv);
+    if (!parsedCommands.maxPages && !parsedCommands.maxcConcurrency) {
+        console.log("Starting crawler...using default page and concurrency limit")
+    } else { console.log("Starting crawler...") }
 
-    crawlSiteAsync(urlFromUser);
+    crawlSiteAsync(
+        parsedCommands.url,
+        parsedCommands.maxcConcurrency,
+        parsedCommands.maxPages
+    );
 }
 main();
