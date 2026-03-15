@@ -5,8 +5,8 @@ export type ExtractedPageData = {
     url: string,
     heading: string | null,
     firstParagraph: string | null,
-    outgoingLinks: string[] | null,
-    imageURLs: string[] | null,
+    outgoingLinks: string[]
+    imageURLs: string[],
 }
 
 export function normalizeURL(url: string): string | null {
@@ -89,7 +89,7 @@ export function getImageURLsFromHTML(html: string, baseURL: string): string[] {
     const imageURLsFromHTML = Array.from(anchorElements).map((node) => node.src);
 
     for (let imageURL of imageURLsFromHTML) {
-        console.log(`$image url is: ${imageURL}`)
+        // console.log(`$image url is: ${imageURL}`)
         URLs.push(`${baseURL}/${imageURL.replace(/^\/+/, "")}`)
     }
     return URLs;
@@ -111,45 +111,41 @@ export function extractPageData(html: string, pageURL: string): ExtractedPageDat
 
 export class ConcurrentCrawler {
     public limit: ReturnType<typeof pLimit>
-    public pages: Record<string, number> = {}
+    public pages: Record<string, ExtractedPageData> = {}
     public shouldStop: boolean = false
     public allTasks: Set<Promise<void>> = new Set()
     public visitedCount: number = 0
+    private visited: Set<string> = new Set();
 
 
     constructor(
         public baseURL: string,
-        public maxConcurrency: number = 1,
-        public maxPages: number = 5,
+        public maxConcurrency: number = 5,
+        public maxPages: number = 100,
 
     ) {
         this.limit = pLimit(this.maxConcurrency)
     }
 
-    public async crawl(): Promise<Record<string, number>> {
+    public async crawl(): Promise<Record<string, ExtractedPageData>> {
         await this.crawlPage(this.baseURL)
         return this.pages
     }
 
-    private addPageVisit(normalizeURL: string): boolean {
-        if (this.shouldStop) {
-            return false
-        }
+    private addPageVisit(normalizedURL: string): boolean {
+        if (this.shouldStop) return false
+        if (this.visited.has(normalizedURL)) return false
+
         if (this.visitedCount >= this.maxPages) {
             this.shouldStop = true
+            console.log(`number of visited pages is ${this.visitedCount}`)
             console.log("Reached maximum number of pages to crawl.")
             return false
         }
 
-        //count if the number of pages has been met
-        const wasVistited = normalizeURL in this.pages
-        if (wasVistited === false) {
-            this.pages[normalizeURL] = 1
-            this.visitedCount += 1
-            return true
-        }
-        this.pages[normalizeURL] += 1
-        return false
+        this.visited.add(normalizedURL)
+        this.visitedCount++;
+        return true
     }
 
     private async getHTML(url: string) {
@@ -158,7 +154,7 @@ export class ConcurrentCrawler {
             try {
                 const responseObject = await fetch(url, {
                     headers: {
-                        "User-Agent": "BootCrawler/1.0"
+                        "User-Agent": "Mo/1.0"
                     }
                 })
                 const responseContentType = responseObject.headers.get("content-type")
@@ -187,39 +183,38 @@ export class ConcurrentCrawler {
 
         //check if baseURL and currentURL have the same domain name
         if (isSameDomain(this.baseURL, currentURL) === false) return
-
         const normalizedCurrentURL = normalizeURL(currentURL)
-
-        //return pages if current url cant be normalized
         if (!normalizedCurrentURL) return
 
-        //update pages, but stop crawling if the URL has been previously visited
-        const pageHasBeenVisited = this.addPageVisit(normalizedCurrentURL)
-        if (pageHasBeenVisited === false) return
+        if (!this.addPageVisit(normalizedCurrentURL)) {
+            return;
+        }
 
         const currentHTML = await this.getHTML(currentURL)
         if (!currentHTML) return
-        console.log(`crawling ${currentURL}`)
 
-        const currentHTMLURLs = getURLsFromHTML(currentHTML, this.baseURL)
-        if (currentHTMLURLs.length === 0) return
+        console.log(`crawling ${currentURL}`)
+        const pageData = extractPageData(currentHTML, currentURL)
+        this.pages[normalizedCurrentURL] = pageData
+        console.log("current state of pages :")
+        // console.log(this.pages)
+
 
         const promises: Promise<void>[] = [];
-        for (const url of currentHTMLURLs) {
+        for (const url of pageData.outgoingLinks) {
+            if (this.shouldStop) break
             const task = this.crawlPage(url)
             this.allTasks.add(task)
             task.finally(() => this.allTasks.delete(task))
             promises.push(task)
         }
         await Promise.all(promises)
-        return
     }
 
 }
 
-export async function crawlSiteAsync(url: string, maxConcurrency: number = 1, maxPages: number = 10) {
+export async function crawlSiteAsync(url: string, maxConcurrency: number = 5, maxPages: number = 100): Promise<Record<string, ExtractedPageData>> {
     const crawlerObject = new ConcurrentCrawler(url, maxConcurrency, maxPages)
-    const pageRecords = await crawlerObject.crawl()
-    console.log(pageRecords)
-
+    const objects = await crawlerObject.crawl()
+    return objects
 }

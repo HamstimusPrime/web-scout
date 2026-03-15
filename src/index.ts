@@ -10,10 +10,18 @@ async function main() {
         console.log("Starting crawler...using default page and concurrency limit")
     } else { console.log("Starting crawler...") }
 
-    crawlSiteAsync(
+    const pages = await crawlSiteAsync(
         parsedCommands.url,
         parsedCommands.maxcConcurrency,
         parsedCommands.maxPages
     );
+
+    console.log("Finished crawling.");
+    const firstPage = Object.values(pages)[0];
+    if (firstPage) {
+        console.log(
+            `First page record: ${firstPage["url"]} - ${firstPage["heading"]}`,
+        );
+    }
 }
 main();
